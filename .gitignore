@@ -1,0 +1,4 @@
+*.time
+/llvm
+/llvm.tar.xz
+/native-bin
