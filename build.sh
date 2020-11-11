@@ -7,14 +7,23 @@ set -x
 
 # install our build tools
 
-sudo dpkg --add-architecture arm64
-sudo apt update
+if [[ "${ARCH}" == "x86_64" ]]
+then
+  sudo dpkg --add-architecture arm64
+else
+  sudo dpkg --add-architecture amd64
+fi
+
+sudo apt update || true
 sudo apt install -qyy xz-utils curl cmake clang-10 ninja-build
 # for cross compiling
 if [[ "${ARCH}" == "x86_64" ]]
 then
   sudo apt install -qyy gcc-7-aarch64-linux-gnu binutils-aarch64-linux-gnu libstdc++6-arm64-cross libgcc1-arm64-cross libstdc++-7-dev-arm64-cross
   sudo apt install -qyy libtinfo5:arm64 zlib1g:arm64 libxml2-dev:arm64 liblzma5:arm64 libicu-dev:arm64
+else
+  sudo apt install -qyy gcc-7-x86-64-linux-gnu binutils-x86-64-linux-gnu libstdc++6-amd64-cross libgcc1-amd64-cross libstdc++-7-dev-amd64-cross
+  sudo apt install -qyy libtinfo5:amd64 zlib1g:amd64 libxml2-dev:amd64 liblzma5:amd64 libicu-dev:amd64
 fi
 
 # fetch clang-11 & llvm-11
@@ -47,8 +56,8 @@ cd bootstrap-native
 CC=clang-10 CXX=clang++-10 cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_PROJECTS=clang \
-  -DCMAKE_C_FLAGS="-march=native -mtune=native" \
-  -DCMAKE_CXX_FLAGS="-march=native -mtune=native" \
+  -DCMAKE_C_FLAGS="-mtune=native" \
+  -DCMAKE_CXX_FLAGS="-mtune=native" \
   -DCMAKE_INSTALL_PREFIX=${DIR}/native-bin \
   -G Ninja \
   ../llvm
@@ -85,6 +94,7 @@ CROSS_ARGS="-target aarch64-linux-gnu --gcc-toolchain=/usr -isystem/usr/aarch64-
 CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
   -DCMAKE_CROSSCOMPILING=True \
   -DLLVM_TABLEGEN=${DIR}/native-bin/bin/llvm-tblgen \
+  -DCLANG_TABLEGEN=${DIR}/llvm/build-native/bin/clang-tblgen \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_PROJECTS=clang \
   -DLLVM_TARGET_ARCH=AArch64 \
@@ -99,6 +109,34 @@ CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
 popd
 }
 
+# cross compile amd64 with native compiler (on aarch64)
+function build_cross_amd64() {
+pushd llvm
+cd build-cross
+
+sudo cp ${DIR}/amd64/libc.so /usr/x86_64-linux-gnu/lib/
+sudo cp ${DIR}/amd64/libpthread.so /usr/x86_64-linux-gnu/lib/
+sudo cp ${DIR}/amd64/libm.so /usr/x86_64-linux-gnu/lib/
+
+CROSS_ARGS="-target x86_64-linux-gnu --gcc-toolchain=/usr -isystem/usr/x86_64-linux-gnu/include/c++/7/x86_64-linux-gnu"
+CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
+  -DCMAKE_CROSSCOMPILING=True \
+  -DLLVM_TABLEGEN=${DIR}/native-bin/bin/llvm-tblgen \
+  -DCLANG_TABLEGEN=${DIR}/llvm/build-native/bin/clang-tblgen \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_PROJECTS=clang \
+  -DLLVM_TARGET_ARCH=X86 \
+  -DCMAKE_C_FLAGS="${CROSS_ARGS}" \
+  -DCMAKE_CXX_FLAGS="${CROSS_ARGS}" \
+  -DLLVM_DEFAULT_TARGET_TRIPLE=x86_64-linux-gnu \
+  -DCMAKE_SYSROOT="/usr/x86_64-linux-gnu" \
+  -G Ninja \
+  ../llvm
+
+/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64.time
+popd
+}
+
 # get us a fresh build of llvm11 that doesn't break
 bootstrap_native
 
@@ -108,4 +146,6 @@ build_native
 if [[ "${ARCH}" == "x86_64" ]]
 then
   build_cross_aarch64
+else
+  build_cross_amd64
 fi
