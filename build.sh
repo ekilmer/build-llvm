@@ -7,6 +7,12 @@ set -x
 
 # install our build tools
 
+function macos_prepare() {
+  brew update || true
+  brew install cmake ninja xz
+}
+
+function linux_prepare() {
 if [[ "${ARCH}" == "x86_64" ]]
 then
   sudo dpkg --add-architecture arm64
@@ -25,7 +31,10 @@ else
   sudo apt install -qyy gcc-7-x86-64-linux-gnu binutils-x86-64-linux-gnu libstdc++6-amd64-cross libgcc1-amd64-cross libstdc++-7-dev-amd64-cross
   sudo apt install -qyy libtinfo5:amd64 zlib1g:amd64 libxml2-dev:amd64 liblzma5:amd64 libicu-dev:amd64
 fi
+}
 
+function prepare_llvm() {
+  local use_tmpfs=$1
 # fetch clang-11 & llvm-11
 if [[ ! -f "${DIR}/llvm.tar.xz" ]]
 then
@@ -37,20 +46,52 @@ then
   mkdir ${DIR}/llvm
 fi
 
+if [[ "${use_tmpfs}" == "tmpfs" ]]
+then
 # always unmount, just in case
 sudo umount ${DIR}/llvm || true
 sudo mount -t tmpfs \
     -o size=12G,uid=$(id -u),gid=$(id -g) \
     tmpfs \
     $(pwd)/llvm
+elif [[ "${use_tmpfs}" == "drive" ]]
+then
+  rm -rf ${DIR}/llvm
+  mkdir ${DIR}/llvm
+else
+  echo "Must specify [drive] or [tmpfs] to prepare_llvm"
+  exit 1
+fi
+
 
 #extract it
 mkdir -p llvm/bootstrap-native
 mkdir -p llvm/build-native
 mkdir -p llvm/build-cross
 tar -xJf llvm.tar.xz --strip-components=1 -C llvm/
+}
 
-function bootstrap_native() {
+function macos_bootstrap_native() {
+pushd llvm
+cd bootstrap-native
+NATIVE_ARGS="-mtune=native -isysroot $(xcrun --show-sdk-path)"
+CC=clang CXX=clang++ cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_PROJECTS=clang \
+  -DCMAKE_C_FLAGS="${NATIVE_ARGS}" \
+  -DCMAKE_CXX_FLAGS="${NATIVE_ARGS}" \
+  -DCMAKE_INSTALL_PREFIX=${DIR}/native-bin \
+  -DCMAKE_SYSROOT="$(xcrun --show-sdk-path)" \
+  -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \
+  -G Ninja \
+  ../llvm
+
+/usr/bin/time -p cmake --build . 2> ${DIR}/bootstrap_native.time
+ninja install
+popd
+}
+
+function linux_bootstrap_native() {
 pushd llvm
 cd bootstrap-native
 CC=clang-10 CXX=clang++-10 cmake \
@@ -67,8 +108,26 @@ ninja install
 popd
 }
 
+function macos_build_native() {
+pushd llvm
+cd build-native
+NATIVE_ARGS="-mtune=native -isysroot $(xcrun --show-sdk-path) -I/Library/Developer/CommandLineTools/usr/include/c++/v1 -L$(xcrun --show-sdk-path)/usr/lib/ -Wno-unused-command-line-argument"
+CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_PROJECTS=clang \
+  -DCMAKE_C_FLAGS="${NATIVE_ARGS}" \
+  -DCMAKE_CXX_FLAGS="${NATIVE_ARGS}" \
+  -DCMAKE_SYSROOT="$(xcrun --show-sdk-path)" \
+  -DCMAKE_OSX_SYSROOT="$(xcrun --show-sdk-path)" \
+  -G Ninja \
+  ../llvm
+
+/usr/bin/time -p cmake --build . 2> ${DIR}/build_native.time
+popd
+}
+
 # build a native arch with boostrapped compiler
-function build_native() {
+function linux_build_native() {
 pushd llvm
 cd build-native
 CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
@@ -81,8 +140,32 @@ CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
 popd
 }
 
+function macos_build_cross_aarch64() {
+pushd llvm
+cd build-cross
+
+CROSS_ARGS="-arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) -I/Library/Developer/CommandLineTools/usr/include/c++/v1 -L$(xcrun --sdk iphoneos --show-sdk-path)/usr/lib/ -Wno-unused-command-line-argument"
+CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
+  -DCMAKE_CROSSCOMPILING=True \
+  -DLLVM_TABLEGEN=${DIR}/llvm/bootstrap-native/bin/llvm-tblgen \
+  -DCLANG_TABLEGEN=${DIR}/llvm/bootstrap-native/bin/clang-tblgen \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DLLVM_ENABLE_PROJECTS=clang \
+  -DLLVM_TARGET_ARCH=AArch64 \
+  -DCMAKE_C_FLAGS="${CROSS_ARGS}" \
+  -DCMAKE_CXX_FLAGS="${CROSS_ARGS}" \
+  -DLLVM_DEFAULT_TARGET_TRIPLE=aarch64-apple-darwin19.6.0 \
+  -DCMAKE_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)" \
+  -DCMAKE_OSX_SYSROOT="$(xcrun --sdk iphoneos --show-sdk-path)" \
+  -G Ninja \
+  ../llvm
+
+/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64.time
+popd
+}
+
 # cross compile aarch64 with native compiler (on amd64)
-function build_cross_aarch64() {
+function linux_build_cross_aarch64() {
 pushd llvm
 cd build-cross
 
@@ -110,7 +193,7 @@ popd
 }
 
 # cross compile amd64 with native compiler (on aarch64)
-function build_cross_amd64() {
+function linux_build_cross_amd64() {
 pushd llvm
 cd build-cross
 
@@ -137,15 +220,33 @@ CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
 popd
 }
 
-# get us a fresh build of llvm11 that doesn't break
-bootstrap_native
-
-# build llvm11 with llvm11
-build_native
-
-if [[ "${ARCH}" == "x86_64" ]]
+if [[ "${OSTYPE}" == "linux-gnu"* ]]
 then
-  build_cross_aarch64
+  linux_prepare
+  prepare_llvm tmpfs
+  # get us a fresh build of llvm11 that doesn't break
+  linux_bootstrap_native
+  # build llvm11 with llvm11
+  linux_build_native
+  if [[ "${ARCH}" == "x86_64" ]]
+  then
+    linux_build_cross_aarch64
+  else
+    linux_build_cross_amd64
+  fi
+elif [[ "${OSTYPE}" == "darwin"* ]]
+then
+  macos_prepare
+  prepare_llvm drive
+  macos_bootstrap_native
+  macos_build_native
+  if [[ "${ARCH}" == "x86_64" ]]
+  then
+    macos_build_cross_aarch64
+  else
+    macos_build_cross_amd64
+  fi
 else
-  build_cross_amd64
+  echo "Unsupported OS: ${OSTYPE}"
+  exit 1
 fi
