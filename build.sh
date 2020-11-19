@@ -9,7 +9,7 @@ set -x
 
 function macos_prepare() {
   brew update || true
-  brew install cmake ninja xz
+  brew install cmake ninja xz || true
 }
 
 function linux_prepare() {
@@ -160,7 +160,7 @@ CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
   -G Ninja \
   ../llvm
 
-/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64.time
+/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64_to_aarch64.time
 popd
 }
 
@@ -188,8 +188,16 @@ CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
   -G Ninja \
   ../llvm
 
-/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_aarch64.time
+/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_aarch64_to_amd64.time
 popd
+}
+
+function macos_build_cross_amd64() {
+pushd llvm
+cd build-cross
+echo "Building to AMD64 on MacOS ARM64 not yet supported"
+popd
+exit 1
 }
 
 # cross compile amd64 with native compiler (on aarch64)
@@ -216,7 +224,7 @@ CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
   -G Ninja \
   ../llvm
 
-/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64.time
+/usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64_to_aarch64.time
 popd
 }
 
