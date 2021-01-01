@@ -1,0 +1,6 @@
+/.git
+/.gitignore
+/Dockerfile
+/llvm
+/llvm.tar.xz
+/build-docker.sh
