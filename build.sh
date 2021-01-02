@@ -141,6 +141,7 @@ do
   cd .. 
   # do not delete last one, we need it for tablegen to build cross compilers
   if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+  then
     rm -rf build-native
   fi
 done
@@ -163,6 +164,7 @@ do
   cd ..
   # do not delete last one, we need it for tablegen to build cross compilers
   if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+  then
     rm -rf build-native
   fi
 done
@@ -195,6 +197,7 @@ do
 
   cd ..
   if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+  then
     rm -rf build-cross
   fi
 
@@ -239,6 +242,7 @@ for round in $(seq 1 ${BUILD_ROUNDS})
     /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_cross_amd64_to_aarch64_${round}.time
   cd ..
   if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+  then
     rm -rf build-cross
   fi
   done
@@ -290,6 +294,7 @@ do
   /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_cross_aarch64_to_amd64_${round}.time
   cd ..
   if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+  then
     rm -rf build-cross
   fi
   done
