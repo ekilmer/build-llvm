@@ -4,7 +4,7 @@ ARCH=$(uname -m)
 export DEBIAN_FRONTEND=noninteractive
 
 set -euo pipefail
-#set -x
+set -x
 
 DISTRIB_ID=Unknown
 if [[ -f /etc/lsb-release ]]
@@ -37,10 +37,10 @@ sudo apt install -qyy xz-utils curl cmake lld-10 clang-10 ninja-build time
 # for cross compiling
 if [[ "${ARCH}" == "x86_64" ]]
 then
-  sudo apt install -qyy gcc-7-aarch64-linux-gnu binutils-aarch64-linux-gnu libstdc++6-arm64-cross libgcc1-arm64-cross libstdc++-7-dev-arm64-cross
+  sudo apt install -qyy gcc-aarch64-linux-gnu binutils-aarch64-linux-gnu libstdc++6-arm64-cross libgcc1-arm64-cross libstdc++-*-dev-arm64-cross
   sudo apt install -qyy libtinfo5:arm64 zlib1g:arm64 libxml2-dev:arm64 liblzma5:arm64 libicu-dev:arm64
 else
-  sudo apt install -qyy gcc-7-x86-64-linux-gnu binutils-x86-64-linux-gnu libstdc++6-amd64-cross libgcc1-amd64-cross libstdc++-7-dev-amd64-cross
+  sudo apt install -qyy gcc-x86-64-linux-gnu binutils-x86-64-linux-gnu libstdc++6-amd64-cross libgcc1-amd64-cross libstdc++-*-dev-amd64-cross
   sudo apt install -qyy libtinfo5:amd64 zlib1g:amd64 libxml2-dev:amd64 liblzma5:amd64 libicu-dev:amd64
 fi
 }
@@ -55,7 +55,7 @@ fi
 
 if [[ ! -d "${DIR}/llvm" ]]
 then
-  mkdir ${DIR}/llvm
+  mkdir -p ${DIR}/llvm
 fi
 
 if [[ "${use_tmpfs}" == "tmpfs" ]]
@@ -69,7 +69,7 @@ sudo mount -t tmpfs \
 elif [[ "${use_tmpfs}" == "drive" ]]
 then
   rm -rf ${DIR}/llvm
-  mkdir ${DIR}/llvm
+  mkdir -p ${DIR}/llvm
 else
   echo "Must specify [drive] or [tmpfs] to prepare_llvm"
   exit 1
@@ -77,15 +77,12 @@ fi
 
 
 #extract it
-mkdir -p llvm/bootstrap-native
-mkdir -p llvm/build-native
-mkdir -p llvm/build-cross
 tar -xJf llvm.tar.xz --strip-components=1 -C llvm/
 }
 
 function macos_bootstrap_native() {
 pushd llvm
-cd bootstrap-native
+mkdir -p bootstrap-native && cd bootstrap-native
 NATIVE_ARGS="${TUNE_OPTS} -isysroot $(xcrun --show-sdk-path)"
 CC=clang CXX=clang++ cmake \
   -DCMAKE_BUILD_TYPE=Release \
@@ -99,14 +96,14 @@ CC=clang CXX=clang++ cmake \
   -G Ninja \
   ../llvm
 
-/usr/bin/time -p cmake --build . 2> ${DIR}/bootstrap_native.time
+/usr/bin/time -p cmake --build . 2> ${DIR}/results/bootstrap_native.time
 ninja install
 popd
 }
 
 function linux_bootstrap_native() {
 pushd llvm
-cd bootstrap-native
+mkdir -p bootstrap-native && cd bootstrap-native
 CC=clang-10 CXX=clang++-10 cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_PROJECTS=clang \
@@ -118,7 +115,7 @@ CC=clang-10 CXX=clang++-10 cmake \
   -G Ninja \
   ../llvm
 
-/usr/bin/time -p cmake --build . 2> ${DIR}/bootstrap_native.time
+/usr/bin/time -p cmake --build . 2> ${DIR}/results/bootstrap_native.time
 ninja install
 popd
 }
@@ -128,7 +125,7 @@ pushd llvm
 
 for round in $(seq 1 ${BUILD_ROUNDS})
 do
-  mkdir build-native && cd build-native
+  mkdir -p build-native && cd build-native
   NATIVE_ARGS="${TUNE_OPTS} -isysroot $(xcrun --show-sdk-path) -I/Library/Developer/CommandLineTools/usr/include/c++/v1 -L$(xcrun --show-sdk-path)/usr/lib/ -Wno-unused-command-line-argument"
   CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
     -DCMAKE_BUILD_TYPE=Release \
@@ -140,8 +137,12 @@ do
     -G Ninja \
     ../llvm
 
-  /usr/bin/time -p cmake --build . 2> ${DIR}/build_native_${round}.time
-  cd .. && rm -rf build-native
+  /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_native_${round}.time
+  cd .. 
+  # do not delete last one, we need it for tablegen to build cross compilers
+  if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+    rm -rf build-native
+  fi
 done
 popd
 }
@@ -151,15 +152,19 @@ function linux_build_native() {
 pushd llvm
 for round in $(seq 1 ${BUILD_ROUNDS})
 do
-  mkdir build-native && cd build-native
+  mkdir -p build-native && cd build-native
   CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
     -DCMAKE_BUILD_TYPE=Release \
     -DLLVM_ENABLE_PROJECTS=clang \
     -G Ninja \
     ../llvm
 
-  /usr/bin/time -p cmake --build . 2> ${DIR}/build_native_${round}.time
-  cd .. && rm -rf build-native
+  /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_native_${round}.time
+  cd ..
+  # do not delete last one, we need it for tablegen to build cross compilers
+  if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+    rm -rf build-native
+  fi
 done
 popd
 }
@@ -168,7 +173,7 @@ function macos_build_cross_aarch64() {
 pushd llvm
 for round in $(seq 1 ${BUILD_ROUNDS})
 do
-  mkdir build-cross && cd build-cross
+  mkdir -p build-cross && cd build-cross
 
   CROSS_ARGS="-arch arm64 -isysroot $(xcrun --sdk iphoneos --show-sdk-path) -I/Library/Developer/CommandLineTools/usr/include/c++/v1 -L$(xcrun --sdk iphoneos --show-sdk-path)/usr/lib/ -Wno-unused-command-line-argument"
   CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
@@ -186,9 +191,13 @@ do
     -G Ninja \
     ../llvm
 
-  /usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64_to_aarch64_${round}.time
+  /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_cross_amd64_to_aarch64_${round}.time
 
-  cd .. && rm -rf build-cross
+  cd ..
+  if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+    rm -rf build-cross
+  fi
+
 done
 popd
 }
@@ -203,12 +212,16 @@ then
   sudo cp ${DIR}/aarch64/libpthread.so /usr/aarch64-linux-gnu/lib/
 fi
 
+isys_glob="/usr/aarch64-linux-gnu/include/c++/*/aarch64-linux-gnu"
+isys_dirs=( ${isys_glob} )
+isys="${isys_dirs[0]}"
+
 pushd llvm
 for round in $(seq 1 ${BUILD_ROUNDS})
   do
-    mkdir build-cross && cd build-cross
+    mkdir -p build-cross && cd build-cross
 
-    CROSS_ARGS="-target aarch64-linux-gnu --gcc-toolchain=/usr -isystem/usr/aarch64-linux-gnu/include/c++/7/aarch64-linux-gnu"
+    CROSS_ARGS="-target aarch64-linux-gnu --gcc-toolchain=/usr -isystem${isys}"
     CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
       -DCMAKE_CROSSCOMPILING=True \
       -DLLVM_TABLEGEN=${DIR}/native-bin/bin/llvm-tblgen \
@@ -223,8 +236,11 @@ for round in $(seq 1 ${BUILD_ROUNDS})
       -G Ninja \
       ../llvm
 
-    /usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_amd64_to_aarch64_${round}.time
-    cd .. && rm -rf build-cross
+    /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_cross_amd64_to_aarch64_${round}.time
+  cd ..
+  if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+    rm -rf build-cross
+  fi
   done
 popd
 }
@@ -246,13 +262,17 @@ then
   sudo cp ${DIR}/amd64/libm.so /usr/x86_64-linux-gnu/lib/
 fi
 
+isys_glob="/usr/x86_64-linux-gnu/include/c++/*/x86_64-linux-gnu"
+isys_dirs=( ${isys_glob} )
+isys="${isys_dirs[0]}"
+
 pushd llvm
 
 for round in $(seq 1 ${BUILD_ROUNDS})
 do
-  mkdir build-cross && cd build-cross
+  mkdir -p build-cross && cd build-cross
 
-  CROSS_ARGS="-target x86_64-linux-gnu --gcc-toolchain=/usr -isystem/usr/x86_64-linux-gnu/include/c++/7/x86_64-linux-gnu"
+  CROSS_ARGS="-target x86_64-linux-gnu --gcc-toolchain=/usr -isystem${isys}"
   CC=${DIR}/native-bin/bin/clang CXX=${DIR}/native-bin/bin/clang++ cmake \
     -DCMAKE_CROSSCOMPILING=True \
     -DLLVM_TABLEGEN=${DIR}/native-bin/bin/llvm-tblgen \
@@ -267,8 +287,11 @@ do
     -G Ninja \
     ../llvm
 
-  /usr/bin/time -p cmake --build . 2> ${DIR}/build_cross_aarch64_to_amd64_${round}.time
-  cd .. && rm -rf build-native
+  /usr/bin/time -p cmake --build . 2> ${DIR}/results/build_cross_aarch64_to_amd64_${round}.time
+  cd ..
+  if [[ "${round}" != "${BUILD_ROUNDS}" ]]
+    rm -rf build-cross
+  fi
   done
 popd
 }
@@ -341,6 +364,10 @@ then
   echo "Unknown arguments: ${POSITIONAL}"
   exit 1
 fi
+
+# clear old results
+rm -rf ${DIR}/results
+mkdir -p ${DIR}/results
 
 if [[ "${OSTYPE}" == "linux-gnu"* ]]
 then

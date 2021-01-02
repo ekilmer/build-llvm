@@ -22,4 +22,4 @@ docker run --rm \
           ${DOCKER_TAG} \
           "-c" "cp -R /work/* /llvm-build; cd /llvm-build; ./build.sh --skip-prepare --always-use-disk"
 
-cp ${DIR}/llvm/*.time ${DIR}/results
+cp ${DIR}/llvm/results/*.time ${DIR}/results
