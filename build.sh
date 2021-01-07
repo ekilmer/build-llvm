@@ -19,6 +19,7 @@ function macos_prepare() {
   brew install cmake ninja xz || true
 }
 
+TUNE_OPTS=""
 function linux_prepare() {
 
 # Tune opt set according to:
@@ -87,7 +88,7 @@ NATIVE_ARGS="${TUNE_OPTS} -isysroot $(xcrun --show-sdk-path)"
 CC=clang CXX=clang++ cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_PROJECTS=clang \
-  -DLLVM_ENABLE_LTO=On \
+  -DLLVM_ENABLE_LTO="${BOOTSTRAP_LTO}" \
   -DCMAKE_C_FLAGS="${NATIVE_ARGS}" \
   -DCMAKE_CXX_FLAGS="${NATIVE_ARGS}" \
   -DCMAKE_INSTALL_PREFIX=${DIR}/native-bin \
@@ -107,7 +108,7 @@ mkdir -p bootstrap-native && cd bootstrap-native
 CC=clang-10 CXX=clang++-10 cmake \
   -DCMAKE_BUILD_TYPE=Release \
   -DLLVM_ENABLE_PROJECTS=clang \
-  -DLLVM_ENABLE_LTO=On \
+  -DLLVM_ENABLE_LTO="${BOOTSTRAP_LTO}" \
   -DLLVM_ENABLE_LLD=True \
   -DCMAKE_C_FLAGS="${TUNE_OPTS}" \
   -DCMAKE_CXX_FLAGS="${TUNE_OPTS}" \
