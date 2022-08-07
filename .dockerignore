@@ -1,6 +1,8 @@
-/.git
-/.gitignore
-/Dockerfile
-/llvm
-/llvm.tar.xz
-/build-docker.sh
+.*
+*
+!build.sh
+!aarch64
+!amd64
+!requirements.txt
+!post_results.py
+!sources.list.changes

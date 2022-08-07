@@ -78,7 +78,7 @@ fi
 
 
 #extract it
-tar -xJf llvm.tar.xz --strip-components=1 -C llvm/
+tar -xJf llvm.tar.xz --strip-components=1 -C llvm/ --no-same-owner
 }
 
 function macos_bootstrap_native() {
@@ -383,7 +383,7 @@ then
   fi
   if [[ "${PREPARE_ONLY}" == "yes" ]]
   then
-    exit $? 
+    exit $?
   fi
 
   if [[ "${ALWAYS_USE_DISK}" == "no" ]]
